@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.idea
+.vscode
+venv
+env
+*.log
+*.csv
+*.pkl
+data/
+models/
+reports/
