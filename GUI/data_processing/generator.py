@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Генератор синтетических данных.
-Реализует точное распределение классов согласно таблице:
-10мм без дефекта, 10мм дефект, 10мм без дефекта...
-Сид определяет порядок типов дефектов в сегментах с дефектами.
+Реализует шаг сканирования 0.01 мм и порядок дефектов по сид.
 """
 
 import numpy as np
@@ -13,8 +11,7 @@ from models.microstrip_line import microstrip_line_t
 from hardware.measurement_system import measurement_system_t
 from config.parameters import (
     LINE_PARAMS, PROBE_PARAMS, FREQ_PARAMS, 
-    NOISE_PARAMS, DATASET_PARAMS, DEFECT_PARAMS, 
-    CLASS_NAMES, SEGMENT_SEQUENCE
+    NOISE_PARAMS, DATASET_PARAMS, DEFECT_PARAMS, CLASS_NAMES
 )
 
 class data_generator_t:
@@ -23,7 +20,6 @@ class data_generator_t:
     def __init__(self, seed=None):
         # Установка сида для воспроизводимости
         self.seed = seed if seed is not None else NOISE_PARAMS['seed']
-        np.random.seed(self.seed)
         
         self.line_nominal = microstrip_line_t(
             LINE_PARAMS['width'], LINE_PARAMS['height'], 
@@ -100,31 +96,42 @@ class data_generator_t:
     def _generate_defect_sequence_from_seed(self) -> list:
         """
         Генерация последовательности дефектов на основе сида.
-        Возвращает последовательность согласно таблице:
-        [0, 1, 0, 2, 0, 1, 0, 3, 0, 4] или вариации в зависимости от seed.
+        Чётные сегменты (0,2,4,6,8) - без дефекта
+        Нечётные сегменты (1,3,5,7,9) - с дефектом, тип определяется сидом
+        
+        Returns:
+            Список типов дефектов для каждого сегмента
         """
-        np.random.seed(self.seed)
+        # Фиксируем сид для генерации последовательности
+        rng = np.random.RandomState(self.seed)
         
-        # Базовая последовательность: чередование без дефекта и с дефектом
-        # Сид определяет какие типы дефектов в сегментах с дефектами
-        base_sequence = SEGMENT_SEQUENCE.copy()
+        segment_sequence = []
+        n_segments = DEFECT_PARAMS['n_segments']
+        defect_types = DEFECT_PARAMS['defect_types'].copy()
         
-        # Если seed отличается от стандартного, варьируем типы дефектов
-        if self.seed != 42:
-            # Перемешиваем типы дефектов для сегментов с дефектами
-            defect_indices = [i for i, x in enumerate(base_sequence) if x != 0]
-            defect_types = [base_sequence[i] for i in defect_indices]
-            np.random.shuffle(defect_types)
-            for idx, def_type in zip(defect_indices, defect_types):
-                base_sequence[idx] = def_type
+        # Перемешиваем типы дефектов на основе сида
+        rng.shuffle(defect_types)
         
-        return base_sequence
+        defect_idx = 0
+        for seg_idx in range(n_segments):
+            if seg_idx % 2 == 0:
+                # Чётные сегменты - без дефекта
+                segment_sequence.append(0)
+            else:
+                # Нечётные сегменты - с дефектом (тип определяется сидом)
+                # Циклически используем перемешанные типы дефектов
+                segment_sequence.append(defect_types[defect_idx % len(defect_types)])
+                defect_idx += 1
+        
+        return segment_sequence
 
     def generate_dataset(self) -> pd.DataFrame:
         """
-        Генерация полного набора данных согласно таблице распределения.
-        Последовательность: 10мм без дефекта, 10мм дефект, 10мм без дефекта...
+        Генерация полного набора данных.
+        Шаг сканирования: 0.01 мм
+        Последовательность: определяется сидом
         """
+        # Фиксируем сид для генерации данных
         np.random.seed(self.seed)
         
         data = []
@@ -133,10 +140,10 @@ class data_generator_t:
         severities = []
         segment_indices = []
         
-        # Получаем последовательность сегментов
+        # Получаем последовательность сегментов на основе сида
         segment_sequence = self._generate_defect_sequence_from_seed()
         n_segments = len(segment_sequence)
-        samples_per_segment = DATASET_PARAMS['n_samples_per_segment']
+        samples_per_segment = DEFECT_PARAMS['samples_per_segment']
         segment_length = DEFECT_PARAMS['segment_length']
         scanning_step = DEFECT_PARAMS['scanning_step']
         
@@ -145,7 +152,7 @@ class data_generator_t:
             defect_type = segment_sequence[seg_idx]
             
             for sample_idx in range(samples_per_segment):
-                # Позиция внутри сегмента
+                # Позиция внутри сегмента (шаг 0.01 мм)
                 pos_in_segment = sample_idx * scanning_step
                 position = seg_idx * segment_length + pos_in_segment + scanning_step
                 
@@ -173,8 +180,8 @@ class data_generator_t:
 
     def generate_scanning_dataset(self) -> pd.DataFrame:
         """
-        Генерация данных сканирования линии с шагом 0.1 мм.
-        Реализует последовательность согласно таблице.
+        Генерация данных сканирования линии с шагом 0.01 мм.
+        Реализует последовательность согласно сид.
         """
         np.random.seed(self.seed)
         
@@ -185,7 +192,7 @@ class data_generator_t:
         
         segment_sequence = self._generate_defect_sequence_from_seed()
         n_segments = len(segment_sequence)
-        samples_per_segment = DATASET_PARAMS['n_samples_per_segment']
+        samples_per_segment = DEFECT_PARAMS['samples_per_segment']
         segment_length = DEFECT_PARAMS['segment_length']
         scanning_step = DEFECT_PARAMS['scanning_step']
         

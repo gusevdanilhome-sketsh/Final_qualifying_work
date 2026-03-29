@@ -26,7 +26,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
 from config.parameters import (
     OUTPUT_PARAMS, DATASET_PARAMS, CLASS_NAMES, 
-    NOISE_PARAMS, SEGMENT_SEQUENCE
+    NOISE_PARAMS, DEFECT_PARAMS
 )
 
 def main():
@@ -43,22 +43,30 @@ def main():
         logger.info(f"Инициализация генератора данных (seed={NOISE_PARAMS['seed']})...")
         generator = data_generator_t(seed=NOISE_PARAMS['seed'])
         
-        # 2. Генерация данных
-        logger.info("Генерация обучающей выборки...")
-        logger.info("Последовательность сегментов согласно таблице:")
-        for i, cls in enumerate(SEGMENT_SEQUENCE):
-            logger.info(f"  Сегмент {i+1} (1мм): Класс {cls} ({CLASS_NAMES[cls]})")
+        # 2. Генерация последовательности дефектов
+        segment_sequence = generator._generate_defect_sequence_from_seed()
+        logger.info("Последовательность сегментов (определяется сид):")
+        for i, cls in enumerate(segment_sequence):
+            seg_type = "Без дефекта" if cls == 0 else f"Дефект: {CLASS_NAMES[cls]}"
+            logger.info(f"  Сегмент {i+1} (1мм, 100 точек): Класс {cls} - {seg_type}")
+        
+        # 3. Генерация данных
+        logger.info("\nГенерация обучающей выборки...")
+        logger.info(f"Шаг сканирования: {DEFECT_PARAMS['scanning_step']*1000:.2f} мм")
+        logger.info(f"Образцов на сегмент: {DEFECT_PARAMS['samples_per_segment']}")
+        logger.info(f"Всего сегментов: {DEFECT_PARAMS['n_segments']}")
         
         df = generator.generate_dataset()
         
-        # 3. Сохранение данных в CSV
+        # 4. Сохранение данных в CSV
         storage = storage_t()
         csv_filename = os.path.join(OUTPUT_PARAMS['data_dir'], "mpl_defect_dataset.csv")
         storage.save_to_csv(df, csv_filename)
-        logger.info(f"Данные сохранены в файл: {csv_filename}")
+        logger.info(f"\nДанные сохранены в файл: {csv_filename}")
         logger.info(f"Всего образцов: {len(df)}")
+        logger.info(f"Названия столбцов: {list(df.columns[:6])}...")
         
-        # 4. Подготовка данных для обучения
+        # 5. Подготовка данных для обучения
         metadata_cols = ['label', 'defect_position', 'defect_severity', 'segment_index', 'position']
         feature_cols = [col for col in df.columns if col not in metadata_cols]
         X = df[feature_cols].values
@@ -81,7 +89,7 @@ def main():
         logger.info(f"\nРазмер обучающей выборки: {len(X_train)}")
         logger.info(f"Размер тестовой выборки: {len(X_test)}")
         
-        # 5. Обучение и верификация классификаторов
+        # 6. Обучение и верификация классификаторов
         logger.info("\nЗапуск обучения классификаторов...")
         classifiers = [
             random_forest_classifier_t(),
@@ -119,7 +127,7 @@ def main():
         logger.info("\nДетальный отчёт по классам:")
         logger.info(classification_report(y_test, best_y_pred, target_names=CLASS_NAMES))
         
-        # 6. Генерация визуализаций
+        # 7. Генерация визуализаций
         logger.info("Генерация визуализаций...")
         
         hodograph_plotter = hodograph_plotter_t()
@@ -134,10 +142,10 @@ def main():
         logger.info(f"Создано карт дефектов: {len(defect_map_paths)}")
         
         defect_map_plotter.plot_defect_map_combined(df, y_test, best_y_pred)
-        defect_map_plotter.plot_segment_sequence(df)
+        defect_map_plotter.plot_segment_sequence(df, segment_sequence)
         defect_map_plotter.plot_prediction_accuracy(y_test, best_y_pred)
         
-        # 7. Генерация отчётов
+        # 8. Генерация отчётов
         logger.info("Генерация отчётов...")
         report_generator = report_generator_t()
         report_generator.generate_classification_report(y_test, best_y_pred, best_classifier.get_name())
@@ -151,6 +159,10 @@ def main():
             logger.info("✓ Целевая точность (≥0.8) достигнута!")
         else:
             logger.warning(f"⚠ Целевая точность (≥0.8) не достигнута. Текущая: {best_accuracy:.4f}")
+        
+        # Информация о последовательности дефектов
+        logger.info(f"\nПоследовательность дефектов (seed={NOISE_PARAMS['seed']}):")
+        logger.info(f"  {segment_sequence}")
         
     except Exception as e:
         logger.error(f"Критическая ошибка выполнения: {e}")

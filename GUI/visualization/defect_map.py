@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Модуль построения карт дефектов микрополосковой линии.
-Карты отображают последовательность согласно таблице.
+Обновлено для шага 0.01 мм и последовательности по сид.
 """
 
 import numpy as np
@@ -12,7 +12,7 @@ from matplotlib import font_manager
 import os
 from config.parameters import (
     OUTPUT_PARAMS, LINE_PARAMS, DEFECT_PARAMS, 
-    CLASS_NAMES, CLASS_COLORS, FREQ_PARAMS, SEGMENT_SEQUENCE
+    CLASS_NAMES, CLASS_COLORS, FREQ_PARAMS
 )
 
 class defect_map_plotter_t:
@@ -58,20 +58,13 @@ class defect_map_plotter_t:
                                         fill=True, color='lightgray', alpha=0.5, label='МПЛ'))
             
             # Отображение границ сегментов (1 мм)
-            for seg_idx in range(len(SEGMENT_SEQUENCE)):
+            n_segments = DEFECT_PARAMS['n_segments']
+            for seg_idx in range(n_segments):
                 seg_start = seg_idx * segment_length
-                has_defect = SEGMENT_SEQUENCE[seg_idx] != 0
-                seg_color = 'white' if not has_defect else 'lightyellow'
-                seg_alpha = 0.3 if not has_defect else 0.5
-                seg_label = f'Сегмент {seg_idx+1}: {CLASS_NAMES[SEGMENT_SEQUENCE[seg_idx]]}'
-                
-                ax.add_patch(plt.Rectangle((seg_start, -line_width), segment_length, line_width*2, 
-                                            fill=True, color=seg_color, alpha=seg_alpha,
-                                            label=seg_label if seg_idx < 2 else ""))
                 ax.axvline(seg_start, color='gray', linestyle='--', linewidth=1, alpha=0.5)
             
-            max_points = 100
-            step = max(1, len(y_true) // max_points)
+            # Прореживание точек для читаемости (шаг 0.01 мм = много точек)
+            step = max(1, len(y_true) // 200)
             
             for i in range(0, len(y_true), step):
                 true_label = int(y_true[i])
@@ -86,11 +79,11 @@ class defect_map_plotter_t:
                     color = 'red' if is_error else CLASS_COLORS[true_label]
                     marker = 'x' if is_error else 'o'
                 
-                ax.plot(pos, 0, marker, color=color, markersize=8, alpha=0.7)
+                ax.plot(pos, 0, marker, color=color, markersize=6, alpha=0.7)
             
             ax.set_xlabel('Продольная координата, м')
             ax.set_ylabel('Поперечная координата, м')
-            ax.set_title(f'Карта дефектов МПЛ на частоте {freq_ghz:.1f} ГГц')
+            ax.set_title(f'Карта дефектов МПЛ на частоте {freq_ghz:.1f} ГГц\n(Шаг сканирования: 0.01 мм)')
             ax.set_xlim(0, line_length)
             ax.set_ylim(-line_width*2, line_width*2)
             ax.grid(True, alpha=0.3)
@@ -130,20 +123,12 @@ class defect_map_plotter_t:
         ax.add_patch(plt.Rectangle((0, -line_width/2), line_length, line_width, 
                                     fill=True, color='lightgray', alpha=0.5, label='МПЛ'))
         
-        for seg_idx in range(len(SEGMENT_SEQUENCE)):
+        n_segments = DEFECT_PARAMS['n_segments']
+        for seg_idx in range(n_segments):
             seg_start = seg_idx * segment_length
-            has_defect = SEGMENT_SEQUENCE[seg_idx] != 0
-            seg_color = 'white' if not has_defect else 'lightyellow'
-            seg_alpha = 0.3 if not has_defect else 0.5
-            seg_label = f'Сегмент {seg_idx+1}: {CLASS_NAMES[SEGMENT_SEQUENCE[seg_idx]]}'
-            
-            ax.add_patch(plt.Rectangle((seg_start, -line_width), segment_length, line_width*2, 
-                                        fill=True, color=seg_color, alpha=seg_alpha,
-                                        label=seg_label if seg_idx < 2 else ""))
             ax.axvline(seg_start, color='gray', linestyle='--', linewidth=1, alpha=0.5)
         
-        max_points = 100
-        step = max(1, len(y_true) // max_points)
+        step = max(1, len(y_true) // 200)
         
         for i in range(0, len(y_true), step):
             true_label = int(y_true[i])
@@ -158,11 +143,11 @@ class defect_map_plotter_t:
                 color = 'red' if is_error else CLASS_COLORS[true_label]
                 marker = 'x' if is_error else 'o'
             
-            ax.plot(pos, 0, marker, color=color, markersize=8, alpha=0.7)
+            ax.plot(pos, 0, marker, color=color, markersize=6, alpha=0.7)
         
         ax.set_xlabel('Продольная координата, м')
         ax.set_ylabel('Поперечная координата, м')
-        ax.set_title('Сводная карта дефектов МПЛ по всем частотам')
+        ax.set_title('Сводная карта дефектов МПЛ по всем частотам\n(Шаг сканирования: 0.01 мм)')
         ax.set_xlim(0, line_length)
         ax.set_ylim(-line_width*2, line_width*2)
         ax.grid(True, alpha=0.3)
@@ -217,29 +202,32 @@ class defect_map_plotter_t:
         
         return filepath
 
-    def plot_segment_sequence(self, data_df: pd.DataFrame) -> str:
-        """Построение диаграммы последовательности сегментов согласно таблице."""
+    def plot_segment_sequence(self, data_df: pd.DataFrame, segment_sequence: list) -> str:
+        """
+        Построение диаграммы последовательности сегментов.
+        Отображает порядок дефектов, определяемый сидом.
+        """
         fig, ax = plt.subplots(figsize=(14, 4))
         
         line_length = LINE_PARAMS['length']
         segment_length = DEFECT_PARAMS['segment_length']
-        n_segments = len(SEGMENT_SEQUENCE)
+        n_segments = len(segment_sequence)
         
         for seg_idx in range(n_segments):
             seg_start = seg_idx * segment_length
-            has_defect = SEGMENT_SEQUENCE[seg_idx] != 0
-            color = 'lightgreen' if not has_defect else 'lightcoral'
-            label = 'Без дефекта' if not has_defect else f'Дефект: {CLASS_NAMES[SEGMENT_SEQUENCE[seg_idx]]}'
+            has_defect = segment_sequence[seg_idx] != 0
+            color = 'lightgreen' if not has_defect else CLASS_COLORS[segment_sequence[seg_idx]]
+            label = 'Без дефекта' if not has_defect else CLASS_NAMES[segment_sequence[seg_idx]]
             
             ax.add_patch(plt.Rectangle((seg_start, 0), segment_length, 1, 
                                         fill=True, color=color, alpha=0.7,
                                         label=label if seg_idx < 2 else ""))
-            ax.text(seg_start + segment_length/2, 0.5, f'Сегмент {seg_idx+1}\n{CLASS_NAMES[SEGMENT_SEQUENCE[seg_idx]]}', 
-                   ha='center', va='center', fontsize=9, fontweight='bold')
+            ax.text(seg_start + segment_length/2, 0.5, f'Сегмент {seg_idx+1}\n{CLASS_NAMES[segment_sequence[seg_idx]]}', 
+                   ha='center', va='center', fontsize=8, fontweight='bold')
         
         ax.set_xlabel('Продольная координата, м')
         ax.set_ylabel('')
-        ax.set_title('Последовательность сегментов микрополосковой линии\n(Согласно таблице распределения классов)')
+        ax.set_title('Последовательность сегментов микрополосковой линии\n(Порядок дефектов определяется сидом, шаг сканирования: 0.01 мм)')
         ax.set_xlim(0, line_length)
         ax.set_ylim(0, 1)
         ax.set_yticks([])

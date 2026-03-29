@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Классификатор Random Forest (рекомендован в VKR.docx).
+Классификатор Random Forest (VKR.docx раздел 1.3.4).
 Оптимизирован для достижения точности ≥0.8.
 """
 
@@ -13,7 +13,7 @@ class random_forest_classifier_t(classifier_t):
     """Реализация классификатора случайный лес."""
     
     def __init__(self):
-        # Оптимизированные параметры согласно VKR.docx раздел 1.3.6
+        # Параметры согласно VKR.docx раздел 1.3.6
         self.model = RandomForestClassifier(
             n_estimators=300,           # Количество деревьев
             max_depth=25,               # Максимальная глубина
