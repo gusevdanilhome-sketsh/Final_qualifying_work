@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Линейный дискриминантный анализ (VKR_V2.docx раздел 5).
+Линейный дискриминантный анализ.
 """
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from classifiers.base_classifier import classifier_t
+from .base_classifier import classifier_t
 
 class lda_classifier_t(classifier_t):
     """Реализация линейного дискриминантного анализа."""

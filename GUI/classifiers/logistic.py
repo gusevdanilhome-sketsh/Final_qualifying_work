@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Логистическая регрессия (VKR_V2.docx раздел 5).
+Логистическая регрессия.
 """
 
 from sklearn.linear_model import LogisticRegression
-from classifiers.base_classifier import classifier_t
+from .base_classifier import classifier_t
 
 class logistic_classifier_t(classifier_t):
     """Реализация логистической регрессии."""

@@ -10,9 +10,7 @@ class storage_t:
     """Управление сохранением данных в файлы."""
     
     def save_to_csv(self, df: pd.DataFrame, filename: str) -> None:
-        """Сохранение DataFrame в CSV файл."""
         df.to_csv(filename, index=False)
 
     def load_from_csv(self, filename: str) -> pd.DataFrame:
-        """Загрузка DataFrame из CSV файла."""
         return pd.read_csv(filename)

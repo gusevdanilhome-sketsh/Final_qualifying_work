@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Генератор синтетических данных с учетом шумовой модели.
-Основано на разделе 4 VKR_V2.docx.
+Генератор синтетических данных.
 """
 
 import numpy as np
@@ -23,25 +22,23 @@ class data_generator_t:
         np.random.seed(NOISE_PARAMS['seed'])
 
     def _create_defect_line(self, defect_type: int, severity: float) -> microstrip_line_t:
-        """Создание модели линии с дефектом."""
         w = LINE_PARAMS['width']
         h = LINE_PARAMS['height']
         t = LINE_PARAMS['thickness']
         eps = LINE_PARAMS['epsilon_r']
         
-        if defect_type == 1: # Утонение высоты проводника
+        if defect_type == 1:
             t *= severity
-        elif defect_type == 2: # Утонение ширины проводника
+        elif defect_type == 2:
             w *= severity
-        elif defect_type == 3: # Утонение подложки
+        elif defect_type == 3:
             h *= severity
-        elif defect_type == 4: # Изменение диэлектрической проницаемости
+        elif defect_type == 4:
             eps *= severity
             
         return microstrip_line_t(w, h, t, eps)
 
     def generate_sample(self, defect_type: int, defect_pos: float) -> np.ndarray:
-        """Генерация одного вектора признаков."""
         features = []
         severity = np.random.uniform(0.7, 0.9) if defect_type > 0 else 1.0
         
@@ -67,14 +64,12 @@ class data_generator_t:
         return features + noise
 
     def _calculate_noise_level(self, signal: np.ndarray) -> float:
-        """Расчет уровня шума исходя из SNR."""
         signal_power = np.mean(np.abs(signal)**2)
         snr_linear = 10**(NOISE_PARAMS['snr_db'] / 10)
         noise_power = signal_power / snr_linear
         return np.sqrt(noise_power)
 
     def generate_dataset(self) -> pd.DataFrame:
-        """Генерация полного набора данных."""
         data = []
         labels = []
         
