@@ -1,0 +1,38 @@
+{
+    "line_parameters": {
+        "width": 0.003,
+        "height": 0.0005,
+        "thickness": 3.5e-05,
+        "epsilon_r": 4.5,
+        "length": 0.02,
+        "z0_nom": 50.0
+    },
+    "probe_parameters": {
+        "a": 0.003
+    },
+    "frequency_parameters": {
+        "frequencies_hz": [
+            1000000000.0,
+            2000000000.0,
+            3000000000.0,
+            4000000000.0,
+            5000000000.0,
+            6000000000.0,
+            7000000000.0,
+            8000000000.0,
+            9000000000.0,
+            10000000000.0
+        ],
+        "power_w": 1.0
+    },
+    "noise_parameters": {
+        "snr_db": 35,
+        "seed": 42
+    },
+    "dataset_parameters": {
+        "n_samples_per_class": 400,
+        "classes": 5,
+        "test_size": 0.3,
+        "random_state": 42
+    }
+}
