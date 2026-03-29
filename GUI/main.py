@@ -14,17 +14,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data_processing.generator import data_generator_t
 from data_processing.storage import storage_t
+from classifiers.random_forest import random_forest_classifier_t
 from classifiers.logistic import logistic_classifier_t
 from classifiers.lda import lda_classifier_t
 from classifiers.bayesian import bayesian_classifier_t
-from classifiers.random_forest import random_forest_classifier_t  # Новый импорт
 from visualization.hodograph import hodograph_plotter_t
 from visualization.defect_map import defect_map_plotter_t
 from visualization.reports import report_generator_t
 from utils.helpers import setup_logging, get_project_root, ensure_output_dirs
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
-from config.parameters import OUTPUT_PARAMS, DATASET_PARAMS
+from config.parameters import OUTPUT_PARAMS, DATASET_PARAMS, CLASS_NAMES
 
 def main():
     """Основная функция выполнения программы."""
@@ -49,12 +49,16 @@ def main():
         csv_filename = os.path.join(OUTPUT_PARAMS['data_dir'], "mpl_defect_dataset.csv")
         storage.save_to_csv(df, csv_filename)
         logger.info(f"Данные сохранены в файл: {csv_filename}")
+        logger.info(f"Названия столбцов: {list(df.columns[:10])}...")
         
         # 4. Подготовка данных для обучения
-        X = df.iloc[:, :-3].values  # Исключаем label, position, severity
+        # Исключаем метаданные (label, position, severity)
+        metadata_cols = ['label', 'defect_position', 'defect_severity', 'position']
+        feature_cols = [col for col in df.columns if col not in metadata_cols]
+        X = df[feature_cols].values
         y = df['label'].values
         
-        # Разделение на обучающую и тестовую выборки (с фиксированным random_state)
+        # Разделение на обучающую и тестовую выборки
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, 
             test_size=DATASET_PARAMS['test_size'], 
@@ -68,7 +72,7 @@ def main():
         # 5. Обучение и верификация классификаторов
         logger.info("Запуск обучения классификаторов...")
         classifiers = [
-            random_forest_classifier_t(),  # Добавлен Random Forest
+            random_forest_classifier_t(),
             logistic_classifier_t(),
             lda_classifier_t(),
             bayesian_classifier_t()
@@ -98,12 +102,27 @@ def main():
         
         # 6. Генерация визуализаций
         logger.info("Генерация визуализаций...")
+        
+        # Годографы по частотам
         hodograph_plotter = hodograph_plotter_t()
-        hodograph_plotter.plot_hodograph(df, best_classifier, X_test, y_test)
+        hodograph_paths = hodograph_plotter.plot_hodographs_by_frequency(X_test, y_test)
+        logger.info(f"Создано годографов: {len(hodograph_paths)}")
+        
+        # Сводный годограф
+        hodograph_plotter.plot_combined_hodograph(X_test, y_test)
+        
+        # Матрица ошибок
         hodograph_plotter.plot_confusion_matrix(confusion_matrix(y_test, best_y_pred))
         
+        # Карты дефектов по частотам
         defect_map_plotter = defect_map_plotter_t()
-        defect_map_plotter.plot_defect_map(df, y_test, best_y_pred)
+        defect_map_paths = defect_map_plotter.plot_defect_maps_by_frequency(df, y_test, best_y_pred)
+        logger.info(f"Создано карт дефектов: {len(defect_map_paths)}")
+        
+        # Сводная карта дефектов
+        defect_map_plotter.plot_defect_map_combined(df, y_test, best_y_pred)
+        
+        # График точности
         defect_map_plotter.plot_prediction_accuracy(y_test, best_y_pred)
         
         # 7. Генерация отчётов

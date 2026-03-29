@@ -3,6 +3,7 @@
 """
 Модуль построения годографов коэффициента отражения.
 Основано на разделе "Годограф коэффициента отражения" VKR_V2.docx.
+Годографы разделяются по частотам, каждый тип дефекта имеет свой цвет.
 """
 
 import numpy as np
@@ -10,9 +11,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import os
-from config.parameters import OUTPUT_PARAMS, FREQ_PARAMS
+from config.parameters import OUTPUT_PARAMS, FREQ_PARAMS, CLASS_NAMES, CLASS_COLORS
 
-# Попытка загрузки кириллического шрифта
 def setup_fonts():
     """Настройка шрифтов для поддержки кириллицы."""
     font_paths = [
@@ -35,61 +35,127 @@ class hodograph_plotter_t:
         self.figures_dir = OUTPUT_PARAMS['figures_dir']
         os.makedirs(self.figures_dir, exist_ok=True)
 
-    def plot_hodograph(self, data_df: pd.DataFrame, classifier, X_test, y_test) -> str:
+    def plot_hodographs_by_frequency(self, X_test: np.ndarray, y_test: np.ndarray) -> list:
         """
-        Построение годографов для каждого класса.
+        Построение годографов для каждой частоты отдельно.
+        Каждый тип дефекта имеет свой цвет.
         
         Args:
-            data_df: DataFrame с данными
-            classifier: Обученный классификатор
             X_test: Тестовые признаки
             y_test: Тестовые метки
             
         Returns:
-            Путь к сохранённому файлу
+            Список путей к сохранённым файлам
         """
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-        fig.suptitle('Годографы коэффициента отражения по классам дефектов', fontsize=14)
-        
-        class_names = ['Без дефекта', 'Утонение высоты', 'Утонение ширины', 
-                       'Утонение подложки', 'Изменение εr']
-        colors = ['black', 'red', 'blue', 'green', 'orange']
-        
-        # Извлекаем комплексные коэффициенты для частот
         n_freq = len(FREQ_PARAMS['frequencies'])
+        n_features_per_freq = 6  # 3 канала × 2 компоненты (I/Q)
+        filepaths = []
         
-        for cls in range(5):
-            ax = axes[cls // 3, cls % 3]
-            mask = y_test == cls
+        for freq_idx in range(n_freq):
+            freq = FREQ_PARAMS['frequencies'][freq_idx]
+            freq_ghz = freq / 1e9
             
-            if np.sum(mask) == 0:
-                ax.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax.transAxes)
-                ax.set_title(f'Класс {cls}: {class_names[cls]}')
-                continue
+            fig, ax = plt.subplots(figsize=(10, 8))
+            fig.suptitle(f'Годограф коэффициента отражения на частоте {freq_ghz:.1f} ГГц', fontsize=14)
             
-            # Для демонстрации берём первые 10 образцов класса
-            sample_indices = np.where(mask)[0][:10]
+            # Извлечение данных для данной частоты
+            start_idx = freq_idx * n_features_per_freq
             
-            for idx in sample_indices:
-                # Формируем годограф по частотам (I/Q пары)
-                sample = X_test[idx]
-                real_parts = sample[0::2][:n_freq]  # I составляющие
-                imag_parts = sample[1::2][:n_freq]  # Q составляющие
+            for cls in range(len(CLASS_NAMES)):
+                mask = y_test == cls
+                if np.sum(mask) == 0:
+                    continue
                 
-                ax.plot(real_parts, imag_parts, 'o-', alpha=0.5, color=colors[cls], markersize=4)
+                # Берём первые 20 образцов каждого класса для читаемости
+                sample_indices = np.where(mask)[0][:20]
+                
+                for idx in sample_indices:
+                    sample = X_test[idx]
+                    # I/Q для трёх каналов
+                    sum_i = sample[start_idx + 0]
+                    sum_q = sample[start_idx + 1]
+                    diff_x_i = sample[start_idx + 2]
+                    diff_x_q = sample[start_idx + 3]
+                    diff_y_i = sample[start_idx + 4]
+                    diff_y_q = sample[start_idx + 5]
+                    
+                    # Используем разностный канал для годографа (более информативен)
+                    ax.plot(diff_x_i, diff_x_q, 'o', alpha=0.5, 
+                           color=CLASS_COLORS[cls], markersize=6,
+                           label=f'{CLASS_NAMES[cls]}' if idx == sample_indices[0] else "")
             
-            ax.set_xlabel('I (действительная часть)')
-            ax.set_ylabel('Q (мнимая часть)')
-            ax.set_title(f'Класс {cls}: {class_names[cls]}')
+            ax.set_xlabel('I (действительная часть), В')
+            ax.set_ylabel('Q (мнимая часть), В')
+            ax.set_title(f'Частота {freq_ghz:.1f} ГГц')
+            ax.grid(True, alpha=0.3)
+            ax.axhline(0, color='gray', linewidth=0.5)
+            ax.axvline(0, color='gray', linewidth=0.5)
+            ax.legend(loc='upper right', fontsize=9)
+            
+            plt.tight_layout()
+            filepath = os.path.join(self.figures_dir, f'hodograph_{freq_ghz:.1f}GHz.png')
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            plt.close()
+            filepaths.append(filepath)
+        
+        return filepaths
+
+    def plot_combined_hodograph(self, X_test: np.ndarray, y_test: np.ndarray) -> str:
+        """
+        Построение сводного годографа по всем частотам.
+        """
+        n_freq = len(FREQ_PARAMS['frequencies'])
+        n_features_per_freq = 6
+        
+        fig, axes = plt.subplots(2, 5, figsize=(20, 8))
+        fig.suptitle('Годографы коэффициента отражения по всем частотам', fontsize=14)
+        axes = axes.flatten()
+        
+        for freq_idx in range(n_freq):
+            freq = FREQ_PARAMS['frequencies'][freq_idx]
+            freq_ghz = freq / 1e9
+            ax = axes[freq_idx]
+            
+            start_idx = freq_idx * n_features_per_freq
+            
+            for cls in range(len(CLASS_NAMES)):
+                mask = y_test == cls
+                if np.sum(mask) == 0:
+                    continue
+                
+                sample_indices = np.where(mask)[0][:15]
+                
+                for idx in sample_indices:
+                    sample = X_test[idx]
+                    diff_x_i = sample[start_idx + 2]
+                    diff_x_q = sample[start_idx + 3]
+                    
+                    ax.plot(diff_x_i, diff_x_q, 'o', alpha=0.5, 
+                           color=CLASS_COLORS[cls], markersize=5)
+            
+            ax.set_xlabel('I')
+            ax.set_ylabel('Q')
+            ax.set_title(f'{freq_ghz:.1f} ГГц')
             ax.grid(True, alpha=0.3)
             ax.axhline(0, color='gray', linewidth=0.5)
             ax.axvline(0, color='gray', linewidth=0.5)
         
-        # Пустой subplot скрываем
-        axes[1, 2].axis('off')
+        # Скрываем пустые subplot
+        for i in range(n_freq, len(axes)):
+            axes[i].axis('off')
+        
+        # Добавляем общую легенду
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor=CLASS_COLORS[i], 
+                   markersize=8, label=CLASS_NAMES[i])
+            for i in range(len(CLASS_NAMES))
+        ]
+        fig.legend(handles=legend_elements, loc='upper center', 
+                   bbox_to_anchor=(0.5, 0.02), ncol=5, fontsize=10)
         
         plt.tight_layout()
-        filepath = os.path.join(self.figures_dir, 'hodographs.png')
+        filepath = os.path.join(self.figures_dir, 'hodograph_combined.png')
         plt.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -98,8 +164,7 @@ class hodograph_plotter_t:
     def plot_confusion_matrix(self, cm: np.ndarray, class_names: list = None) -> str:
         """Построение матрицы ошибок."""
         if class_names is None:
-            class_names = ['Без дефекта', 'Утонение высоты', 'Утонение ширины', 
-                           'Утонение подложки', 'Изменение εr']
+            class_names = CLASS_NAMES
         
         fig, ax = plt.subplots(figsize=(8, 6))
         im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
@@ -115,7 +180,6 @@ class hodograph_plotter_t:
         
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
         
-        # Добавляем значения в ячейки
         thresh = cm.max() / 2.
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
