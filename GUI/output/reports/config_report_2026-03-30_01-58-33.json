@@ -4,7 +4,7 @@
         "height": 0.0005,
         "thickness": 3.5e-05,
         "epsilon_r": 4.5,
-        "length": 0.02,
+        "length": 0.01,
         "z0_nom": 50.0
     },
     "probe_parameters": {
@@ -26,11 +26,11 @@
         "power_w": 1.0
     },
     "noise_parameters": {
-        "snr_db": 35,
+        "snr_db": 40,
         "seed": 42
     },
     "dataset_parameters": {
-        "n_samples_per_class": 400,
+        "n_samples_per_segment": 10,
         "classes": 5,
         "test_size": 0.3,
         "random_state": 42

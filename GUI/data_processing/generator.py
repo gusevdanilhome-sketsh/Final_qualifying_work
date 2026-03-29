@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Генератор синтетических данных с учетом шумовой модели.
-Основано на разделе 4 VKR_V2.docx и разделе 2 VKR.docx.
+Генератор синтетических данных.
+Реализует точное распределение классов согласно таблице:
+10мм без дефекта, 10мм дефект, 10мм без дефекта...
+Сид определяет порядок типов дефектов в сегментах с дефектами.
 """
 
 import numpy as np
@@ -11,15 +13,17 @@ from models.microstrip_line import microstrip_line_t
 from hardware.measurement_system import measurement_system_t
 from config.parameters import (
     LINE_PARAMS, PROBE_PARAMS, FREQ_PARAMS, 
-    NOISE_PARAMS, DATASET_PARAMS, DEFECT_PARAMS, CLASS_NAMES
+    NOISE_PARAMS, DATASET_PARAMS, DEFECT_PARAMS, 
+    CLASS_NAMES, SEGMENT_SEQUENCE
 )
 
 class data_generator_t:
     """Генерация выборки для обучения классификаторов."""
     
-    def __init__(self):
+    def __init__(self, seed=None):
         # Установка сида для воспроизводимости
-        np.random.seed(NOISE_PARAMS['seed'])
+        self.seed = seed if seed is not None else NOISE_PARAMS['seed']
+        np.random.seed(self.seed)
         
         self.line_nominal = microstrip_line_t(
             LINE_PARAMS['width'], LINE_PARAMS['height'], 
@@ -79,10 +83,7 @@ class data_generator_t:
         return np.sqrt(noise_power)
 
     def _generate_column_names(self) -> list:
-        """
-        Генерация названий столбцов с отображением частоты, 
-        составляющей сигнала и канала.
-        """
+        """Генерация названий столбцов с отображением частоты, составляющей и канала."""
         channels = ['Sum', 'Diff_X', 'Diff_Y']
         components = ['I', 'Q']
         column_names = []
@@ -96,40 +97,66 @@ class data_generator_t:
         
         return column_names
 
+    def _generate_defect_sequence_from_seed(self) -> list:
+        """
+        Генерация последовательности дефектов на основе сида.
+        Возвращает последовательность согласно таблице:
+        [0, 1, 0, 2, 0, 1, 0, 3, 0, 4] или вариации в зависимости от seed.
+        """
+        np.random.seed(self.seed)
+        
+        # Базовая последовательность: чередование без дефекта и с дефектом
+        # Сид определяет какие типы дефектов в сегментах с дефектами
+        base_sequence = SEGMENT_SEQUENCE.copy()
+        
+        # Если seed отличается от стандартного, варьируем типы дефектов
+        if self.seed != 42:
+            # Перемешиваем типы дефектов для сегментов с дефектами
+            defect_indices = [i for i, x in enumerate(base_sequence) if x != 0]
+            defect_types = [base_sequence[i] for i in defect_indices]
+            np.random.shuffle(defect_types)
+            for idx, def_type in zip(defect_indices, defect_types):
+                base_sequence[idx] = def_type
+        
+        return base_sequence
+
     def generate_dataset(self) -> pd.DataFrame:
         """
-        Генерация полного набора данных.
-        Между двумя дефектами должно находиться отсутствие дефекта.
+        Генерация полного набора данных согласно таблице распределения.
+        Последовательность: 10мм без дефекта, 10мм дефект, 10мм без дефекта...
         """
-        # Сброс сида перед генерацией для гарантированной воспроизводимости
-        np.random.seed(NOISE_PARAMS['seed'])
+        np.random.seed(self.seed)
         
         data = []
         labels = []
         positions = []
         severities = []
+        segment_indices = []
         
-        samples_per_class = DATASET_PARAMS['n_samples_per_class']
+        # Получаем последовательность сегментов
+        segment_sequence = self._generate_defect_sequence_from_seed()
+        n_segments = len(segment_sequence)
+        samples_per_segment = DATASET_PARAMS['n_samples_per_segment']
+        segment_length = DEFECT_PARAMS['segment_length']
+        scanning_step = DEFECT_PARAMS['scanning_step']
         
-        # Генерация с учётом требования: между дефектами - отсутствие дефекта
-        for cls in range(DATASET_PARAMS['classes']):
-            for i in range(samples_per_class):
-                # Выбор позиции дефекта
-                pos = DEFECT_PARAMS['positions'][i % len(DEFECT_PARAMS['positions'])]
-                severity = np.random.uniform(*DEFECT_PARAMS['severity_range']) if cls > 0 else 1.0
-                sample = self.generate_sample(cls, pos)
-                data.append(sample)
-                labels.append(cls)
-                positions.append(pos)
-                severities.append(severity)
+        # Генерация данных для каждого сегмента
+        for seg_idx in range(n_segments):
+            defect_type = segment_sequence[seg_idx]
+            
+            for sample_idx in range(samples_per_segment):
+                # Позиция внутри сегмента
+                pos_in_segment = sample_idx * scanning_step
+                position = seg_idx * segment_length + pos_in_segment + scanning_step
                 
-                # После каждого дефекта (кроме последнего в серии) добавляем образец без дефекта
-                if cls > 0 and i < samples_per_class - 1:
-                    no_defect_sample = self.generate_sample(0, pos + DEFECT_PARAMS['min_gap_between_defects'])
-                    data.append(no_defect_sample)
-                    labels.append(0)
-                    positions.append(pos + DEFECT_PARAMS['min_gap_between_defects'])
-                    severities.append(1.0)
+                severity = np.random.uniform(*DEFECT_PARAMS['severity_range']) if defect_type > 0 else 1.0
+                sample = self.generate_sample(defect_type, position)
+                
+                data.append(sample)
+                labels.append(defect_type)
+                positions.append(position)
+                severities.append(severity)
+                segment_indices.append(seg_idx)
         
         df = pd.DataFrame(data)
         
@@ -140,48 +167,46 @@ class data_generator_t:
         df['label'] = labels
         df['defect_position'] = positions
         df['defect_severity'] = severities
+        df['segment_index'] = segment_indices
         
         return df
 
     def generate_scanning_dataset(self) -> pd.DataFrame:
         """
-        Генерация данных сканирования линии с шагом 0.01 мм.
-        (VKR.docx раздел 2.1)
+        Генерация данных сканирования линии с шагом 0.1 мм.
+        Реализует последовательность согласно таблице.
         """
-        np.random.seed(NOISE_PARAMS['seed'])
+        np.random.seed(self.seed)
         
         data = []
         labels = []
         positions = []
+        segment_indices = []
         
-        scanning_step = PROBE_PARAMS['scanning_step']
-        line_length = LINE_PARAMS['length']
-        n_positions = int(line_length / scanning_step)
+        segment_sequence = self._generate_defect_sequence_from_seed()
+        n_segments = len(segment_sequence)
+        samples_per_segment = DATASET_PARAMS['n_samples_per_segment']
+        segment_length = DEFECT_PARAMS['segment_length']
+        scanning_step = DEFECT_PARAMS['scanning_step']
         
-        for i in range(n_positions):
-            pos = i * scanning_step
+        for seg_idx in range(n_segments):
+            defect_type = segment_sequence[seg_idx]
             
-            # Определение наличия дефекта в данной позиции
-            defect_found = False
-            for defect_pos in DEFECT_PARAMS['positions']:
-                if abs(pos - defect_pos) < DEFECT_PARAMS['max_size'] / 2:
-                    defect_type = np.random.randint(1, 5)
-                    sample = self.generate_sample(defect_type, pos)
-                    labels.append(defect_type)
-                    defect_found = True
-                    break
-            
-            if not defect_found:
-                sample = self.generate_sample(0, pos)
-                labels.append(0)
-            
-            data.append(sample)
-            positions.append(pos)
+            for sample_idx in range(samples_per_segment):
+                pos_in_segment = sample_idx * scanning_step
+                position = seg_idx * segment_length + pos_in_segment + scanning_step
+                
+                sample = self.generate_sample(defect_type, position)
+                data.append(sample)
+                labels.append(defect_type)
+                positions.append(position)
+                segment_indices.append(seg_idx)
         
         df = pd.DataFrame(data)
         feature_names = self._generate_column_names()
         df.columns = feature_names
         df['label'] = labels
         df['position'] = positions
+        df['segment_index'] = segment_indices
         
         return df
